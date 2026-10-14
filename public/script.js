@@ -1,66 +1,158 @@
+
 document.addEventListener('DOMContentLoaded', () => {
-  const form = document.querySelector('#project-form');
-  const nameInput = document.querySelector('#name');
-  const statusInput = document.querySelector('#status');
-  const list = document.querySelector('#project-list');
-  const emptyState = document.querySelector('#empty-state');
+    const form = document.querySelector('#project-form');
+    const nameInput = document.querySelector('#name');
+    const statusInput = document.querySelector('#status');
+    const list = document.querySelector('#project-list');
+    const emptyState = document.querySelector('#empty-state');
+    const saveButton = document.querySelector('#save-button');
+    const cancelButton = document.querySelector('#cancel-button');
 
-  // Starts empty on every page load (no persistence yet)
-  const projects = [];
-  let counter = 0;
+    // Projects stay in memory and clear when the page refreshes.
+    const projects = [];
 
-  function createId() {
-    if (window.crypto && typeof window.crypto.randomUUID === 'function') {
-      return window.crypto.randomUUID();
+    let editingId = null;
+    let counter = 0;
+
+    const addLabel = saveButton.textContent;
+
+    // Prepare the Cancel edit button.
+    cancelButton.type = 'button';
+    cancelButton.hidden = true;
+
+    // Create a unique ID for each new project.
+    function createId() {
+        if (
+            window.crypto &&
+            typeof window.crypto.randomUUID === 'function'
+        ) {
+            return window.crypto.randomUUID();
+        }
+
+        counter += 1;
+        return 'project-' + Date.now() + '-' + counter;
     }
-    counter += 1;
-    return 'project-' + Date.now() + '-' + counter;
-  }
 
-  function render() {
-    // Clear everything, then rebuild from the array
-    list.textContent = '';
+    // Return the form to Add mode.
+    function setAddMode() {
+        editingId = null;
+        form.reset();
 
-    const itemTag = list.tagName === 'UL' || list.tagName === 'OL' ? 'li' : 'div';
+        saveButton.textContent = addLabel;
+        cancelButton.hidden = true;
+    }
 
-    projects.forEach((project) => {
-      const item = document.createElement(itemTag);
-      item.dataset.id = project.id;
+    // Load a project's values into the form for editing.
+    function startEdit(id) {
+        const project = projects.find((item) => item.id === id);
 
-      const nameEl = document.createElement('strong');
-      nameEl.textContent = project.name;
+        if (!project) {
+            return;
+        }
 
-      const statusEl = document.createElement('span');
-      statusEl.textContent = ' - ' + project.status;
+        editingId = id;
+        nameInput.value = project.name;
+        statusInput.value = project.status;
 
-      item.appendChild(nameEl);
-      item.appendChild(statusEl);
-      list.appendChild(item);
+        saveButton.textContent = 'Save changes';
+        cancelButton.hidden = false;
+
+        nameInput.focus();
+    }
+
+    // Display all projects.
+    function render() {
+        list.textContent = '';
+
+        const itemTag =
+            list.tagName === 'UL' || list.tagName === 'OL'
+                ? 'li'
+                : 'div';
+
+        projects.forEach((project) => {
+            const item = document.createElement(itemTag);
+            item.dataset.id = project.id;
+
+            const nameElement = document.createElement('strong');
+            nameElement.textContent = project.name;
+
+            const statusElement = document.createElement('span');
+            statusElement.textContent = ' - ' + project.status + ' ';
+
+            const editButton = document.createElement('button');
+            editButton.type = 'button';
+            editButton.textContent = 'Edit';
+
+            editButton.addEventListener('click', () => {
+                startEdit(project.id);
+            });
+
+            item.appendChild(nameElement);
+            item.appendChild(statusElement);
+            item.appendChild(editButton);
+
+            list.appendChild(item);
+        });
+
+        if (emptyState) {
+            emptyState.hidden = projects.length > 0;
+        }
+    }
+
+    // One submit listener handles both adding and editing.
+    form.addEventListener('submit', (event) => {
+        event.preventDefault();
+
+        const name = nameInput.value.trim();
+        const status = statusInput.value;
+
+        // Do not accept an empty project name.
+        if (name === '') {
+            nameInput.focus();
+            nameInput.setCustomValidity(
+                'Please enter a project name.'
+            );
+            nameInput.reportValidity();
+            return;
+        }
+
+        nameInput.setCustomValidity('');
+
+        if (editingId === null) {
+            // Add a new project.
+            projects.push({
+                id: createId(),
+                name: name,
+                status: status
+            });
+        } else {
+            // Update the selected project without changing its ID.
+            const project = projects.find(
+                (item) => item.id === editingId
+            );
+
+            if (project) {
+                project.name = name;
+                project.status = status;
+            }
+        }
+
+        render();
+        setAddMode();
+        nameInput.focus();
     });
 
-    if (emptyState) {
-      emptyState.hidden = projects.length > 0;
-    }
-  }
+    // Cancel editing without changing the original project.
+    cancelButton.addEventListener('click', () => {
+        nameInput.setCustomValidity('');
+        setAddMode();
+    });
 
-  // The one and only submit listener
-  form.addEventListener('submit', (event) => {
-    event.preventDefault();
+    // Clear validation feedback when the user changes the name.
+    nameInput.addEventListener('input', () => {
+        nameInput.setCustomValidity('');
+    });
 
-    const name = nameInput.value.trim();
-    const status = statusInput.value;
-
-    if (name === '') {
-      nameInput.focus();
-      return;
-    }
-
-    projects.push({ id: createId(), name: name, status: status });
+    // Show the initial empty project list.
     render();
-
-    form.reset();
-    nameInput.focus();
-  });
-
-  render();
 });
