@@ -1,3 +1,4 @@
+
 document.addEventListener('DOMContentLoaded', () => {
     const form = document.querySelector('#project-form');
     const nameInput = document.querySelector('#name');
@@ -8,11 +9,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveButton = document.querySelector('#save-button');
     const cancelButton = document.querySelector('#cancel-button');
 
-    // The API is the source of truth for all project records.
+    // The API remains the source of truth for project records.
     let projects = [];
     let editingId = null;
-    let loading = false;
+    let loading = true;
     let saving = false;
+    let loadState = 'loading';
 
     const addLabel = saveButton.textContent;
 
@@ -24,20 +26,17 @@ document.addEventListener('DOMContentLoaded', () => {
         message.dataset.type = type;
     }
 
-    function setMutationDisabled(disabled) {
+    function updateButtonState() {
+        const disabled = loading || saving;
+
+        // Prevent changes and repeated mutations while requests are pending.
+        nameInput.disabled = disabled;
+        statusInput.disabled = disabled;
         saveButton.disabled = disabled;
         cancelButton.disabled = disabled;
+
         list.querySelectorAll('button').forEach((button) => {
             button.disabled = disabled;
-        });
-    }
-
-    function updateButtonState() {
-        saveButton.disabled = loading || saving;
-        cancelButton.disabled = loading || saving;
-
-        list.querySelectorAll('button').forEach((button) => {
-            button.disabled = loading || saving;
         });
 
         saveButton.textContent = saving
@@ -66,7 +65,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         nameInput.setCustomValidity('');
         cancelButton.hidden = true;
-        saveButton.textContent = addLabel;
         updateButtonState();
     }
 
@@ -95,6 +93,7 @@ document.addEventListener('DOMContentLoaded', () => {
             item.dataset.id = String(project.id);
 
             const nameElement = document.createElement('strong');
+            // Treat project names as text, never as HTML.
             nameElement.textContent = project.name;
 
             const statusElement = document.createElement('span');
@@ -118,7 +117,9 @@ document.addEventListener('DOMContentLoaded', () => {
             list.appendChild(item);
         });
 
-        emptyState.hidden = projects.length > 0;
+        // An empty collection is confirmed only after a successful load.
+        emptyState.hidden = !(loadState === 'loaded' && projects.length === 0);
+
         updateButtonState();
     }
 
@@ -126,6 +127,7 @@ document.addEventListener('DOMContentLoaded', () => {
         loading = true;
 
         if (showLoading) {
+            loadState = 'loading';
             showMessage('Loading projects...', 'loading');
         }
 
@@ -140,6 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             projects = data;
+            loadState = 'loaded';
 
             // If the record being edited has disappeared, leave edit mode.
             if (
@@ -156,10 +159,17 @@ document.addEventListener('DOMContentLoaded', () => {
             render();
             return true;
         } catch (error) {
+            loadState = 'error';
+
             showMessage(
-                `Could not load projects: ${error.message || 'Network error. Check that the server is running.'}`,
+                `Could not load projects: ${
+                    error.message || 'Network error. Check that the server is running.'
+                }`,
                 'error'
             );
+
+            // Do not display the empty state after an unsuccessful load.
+            render();
             return false;
         } finally {
             loading = false;
@@ -226,7 +236,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             await readResponse(response);
 
-            // Reload the authoritative collection after a successful mutation.
+            // Refresh the authoritative collection after a successful mutation.
             const loaded = await loadProjects();
 
             if (!loaded) {
@@ -239,13 +249,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
             setAddMode();
             showMessage(
-                isEditing ? 'Project updated successfully.' : 'Project added successfully.',
+                isEditing
+                    ? 'Project updated successfully.'
+                    : 'Project added successfully.',
                 'success'
             );
             nameInput.focus();
         } catch (error) {
+            // Keep the form values so the user can retry.
             showMessage(
-                `Could not ${isEditing ? 'save changes' : 'add project'}: ${error.message || 'Network error. Check that the server is running.'}`,
+                `Could not ${isEditing ? 'save changes' : 'add project'}: ${
+                    error.message || 'Network error. Check that the server is running.'
+                }`,
                 'error'
             );
         } finally {
@@ -267,6 +282,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // Preserve the existing delete confirmation.
         if (!window.confirm(`Delete "${project.name}"?`)) {
             return;
         }
@@ -300,7 +316,9 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessage('Project deleted successfully.', 'success');
         } catch (error) {
             showMessage(
-                `Could not delete project: ${error.message || 'Network error. Check that the server is running.'}`,
+                `Could not delete project: ${
+                    error.message || 'Network error. Check that the server is running.'
+                }`,
                 'error'
             );
         } finally {
@@ -309,7 +327,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Keep exactly one submit listener for both creating and editing.
     form.addEventListener('submit', saveProject);
 
     cancelButton.addEventListener('click', () => {
@@ -325,7 +342,7 @@ document.addEventListener('DOMContentLoaded', () => {
         nameInput.setCustomValidity('');
     });
 
-    // Load the server's saved records when the page opens.
+    // Start with loading feedback; do not imply that the list is empty.
     render();
     loadProjects({ showLoading: true });
 });
